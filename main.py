@@ -200,13 +200,15 @@ class WebRequestTimerApp:
                         # スケジューラーに停止フラグを設定（同期的に実行可能）
                         if self.scheduler:
                             self.scheduler.stop_sync()
-                            self.logger.info("Scheduler stop flag set successfully")
-                        
+                            self.logger.info(
+                                "Scheduler stop flag set successfully")
+
                         # トレイアプリの状態を更新
                         if self.tray_app:
-                            status = {'scheduler_running': False, 'total_jobs': 0, 'running_jobs': 0}
+                            status = {'scheduler_running': False,
+                                      'total_jobs': 0, 'running_jobs': 0}
                             self.tray_app.update_status(status)
-                        
+
                         return True
                     except Exception as e:
                         self.logger.error(f"Failed to stop scheduler: {e}")
