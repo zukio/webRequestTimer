@@ -100,11 +100,11 @@ class WebRequestTimerTrayApp:
                 item('スケジュール管理', pystray.Menu(*schedule_items)),
 
                 # ログ・統計 #（UIが複雑になるので非表示、CLI等で対処）
-                # item('ログ・統計', pystray.Menu(
-                #    item('リクエスト履歴を表示', self.show_request_history),
-                #    item('統計情報を表示', self.show_statistics),
-                #    item('ログファイルを開く', self.open_log_file)
-                # )),
+                item('ログ・統計', pystray.Menu(
+                    item('リクエスト履歴を表示', self.show_request_history),
+                    item('統計情報を表示', self.show_statistics),
+                    item('ログファイルを開く', self.open_log_file)
+                )),
 
                 # 設定
                 item('設定', pystray.Menu(
@@ -156,20 +156,20 @@ class WebRequestTimerTrayApp:
             pystray.Menu.SEPARATOR,
             item('スケジューラーを開始', self.start_scheduler),
             item('スケジューラーを停止', self.stop_scheduler),
-            # pystray.Menu.SEPARATOR,
-            # item('今すぐテスト実行', self.run_test_request) #（UIが複雑になるので非表示、CLI等で対処）
+            pystray.Menu.SEPARATOR,
+            item('今すぐテスト実行', self.run_test_request)  # （UIが複雑になるので非表示、CLI等で対処）
         ]
 
         # 個別スケジュールの有効/無効切り替え #（UIが複雑になるので非表示、CLI等で対処）
-        # schedules = self.config.get('request_schedules', [])
-        # if schedules:
-        #    items.append(pystray.Menu.SEPARATOR)
-        #    items.append(item('個別スケジュール切り替え',
-        #                      pystray.Menu(*[
-        #                          item(f"{s.get('name', s.get('id'))}: {'有効' if s.get('enabled', True) else '無効'}",
-        #                               self._create_toggle_handler(s.get('id')))
-        #                          for s in schedules[:10]  # 最大10件まで表示
-        #                      ])))
+        schedules = self.config.get('request_schedules', [])
+        if schedules:
+            items.append(pystray.Menu.SEPARATOR)
+            items.append(item('個別スケジュール切り替え',
+                              pystray.Menu(*[
+                                  item(f"{s.get('name', s.get('id'))}: {'有効' if s.get('enabled', True) else '無効'}",
+                                       self._create_toggle_handler(s.get('id')))
+                                  for s in schedules[:10]  # 最大10件まで表示
+                              ])))
 
         return items
 
