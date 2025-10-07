@@ -99,19 +99,17 @@ class WebRequestTimerTrayApp:
                 # スケジュール管理
                 item('スケジュール管理', pystray.Menu(*schedule_items)),
 
-                # ログ・統計
-                item('ログ・統計', pystray.Menu(
-                    item('リクエスト履歴を表示', self.show_request_history),
-                    item('統計情報を表示', self.show_statistics),
-                    item('ログファイルを開く', self.open_log_file)
-                )),
+                # ログ・統計 #（UIが複雑になるので非表示、CLI等で対処）
+                # item('ログ・統計', pystray.Menu(
+                #    item('リクエスト履歴を表示', self.show_request_history),
+                #    item('統計情報を表示', self.show_statistics),
+                #    item('ログファイルを開く', self.open_log_file)
+                # )),
 
                 # 設定
                 item('設定', pystray.Menu(
                     item('設定ファイルを編集', self.edit_config_file),
-                    item('ログの設定', self.configure_logging),
-                    item('UDP通知設定', self.configure_udp_notification),
-                    item('設定をリロード', self.reload_config)
+                    item('UDP通知設定', self.configure_udp_notification)
                 )),
 
                 pystray.Menu.SEPARATOR,
@@ -158,20 +156,20 @@ class WebRequestTimerTrayApp:
             pystray.Menu.SEPARATOR,
             item('スケジューラーを開始', self.start_scheduler),
             item('スケジューラーを停止', self.stop_scheduler),
-            pystray.Menu.SEPARATOR,
-            item('今すぐテスト実行', self.run_test_request)
+            # pystray.Menu.SEPARATOR,
+            # item('今すぐテスト実行', self.run_test_request) #（UIが複雑になるので非表示、CLI等で対処）
         ]
 
-        # 個別スケジュールの有効/無効切り替え
-        schedules = self.config.get('request_schedules', [])
-        if schedules:
-            items.append(pystray.Menu.SEPARATOR)
-            items.append(item('個別スケジュール切り替え',
-                              pystray.Menu(*[
-                                  item(f"{s.get('name', s.get('id'))}: {'有効' if s.get('enabled', True) else '無効'}",
-                                       self._create_toggle_handler(s.get('id')))
-                                  for s in schedules[:10]  # 最大10件まで表示
-                              ])))
+        # 個別スケジュールの有効/無効切り替え #（UIが複雑になるので非表示、CLI等で対処）
+        # schedules = self.config.get('request_schedules', [])
+        # if schedules:
+        #    items.append(pystray.Menu.SEPARATOR)
+        #    items.append(item('個別スケジュール切り替え',
+        #                      pystray.Menu(*[
+        #                          item(f"{s.get('name', s.get('id'))}: {'有効' if s.get('enabled', True) else '無効'}",
+        #                               self._create_toggle_handler(s.get('id')))
+        #                          for s in schedules[:10]  # 最大10件まで表示
+        #                      ])))
 
         return items
 
@@ -479,7 +477,21 @@ class WebRequestTimerTrayApp:
         """設定ファイルを編集する"""
         try:
             import subprocess
+
+            # 設定ファイルを開く
             subprocess.run(['notepad.exe', CONFIG_PATH])
+
+            # 編集後にリロードするか確認
+            def ask_reload():
+                root = tk.Tk()
+                root.withdraw()
+                if messagebox.askyesno("設定リロード", "設定ファイルの編集が完了しました。\n設定をリロードしますか？"):
+                    self.reload_config(None, None)
+                root.destroy()
+
+            # 別スレッドで確認ダイアログを表示
+            threading.Thread(target=ask_reload, daemon=True).start()
+
         except Exception as e:
             self._show_error("エラー", f"設定ファイルを開けませんでした: {e}")
 
@@ -763,10 +775,39 @@ WebRequestTimer 使用方法:
 
     def on_exit(self, icon, item):
         """アプリケーションを終了する"""
-        self.running = False
-        if self.scheduler_callback:
-            self.scheduler_callback('stop', {})
-        self.icon.stop()
+        try:
+            self.running = False
+
+            # スケジューラーを停止
+            if self.scheduler_callback:
+                self.scheduler_callback('stop', {})
+
+            # メインアプリケーションに終了を通知
+            if self.scheduler_callback:
+                self.scheduler_callback('exit', {})
+
+            # トレイアイコンを停止
+            self.icon.stop()
+
+            # プロセス終了を確実にする
+            import os
+            import signal
+            import threading
+
+            def force_exit():
+                import time
+                time.sleep(1)  # 1秒待機してから強制終了
+                os.kill(os.getpid(), signal.SIGTERM)
+
+            # 1秒後に強制終了するスレッドを開始
+            threading.Thread(target=force_exit, daemon=True).start()
+
+        except Exception as e:
+            self.logger.error(f"Exit error: {e}")
+            # エラーが発生した場合は即座に強制終了
+            import os
+            import signal
+            os.kill(os.getpid(), signal.SIGTERM)
 
     def run(self):
         """トレイアプリを実行する"""

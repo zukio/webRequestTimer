@@ -255,6 +255,17 @@ class WebRequestTimerApp:
                                 return None
                 return None
 
+            elif action == 'exit':
+                # アプリケーション全体を終了
+                try:
+                    # メインループを停止
+                    self.running = False
+                    self.logger.info("Application exit requested")
+                    return True
+                except Exception as e:
+                    self.logger.error(f"Failed to exit application: {e}")
+                    return False
+
             else:
                 self.logger.warning(
                     f"Unknown scheduler callback action: {action}")
@@ -533,7 +544,25 @@ def main():
         # 終了処理のセットアップ
         def signal_handler(signum, frame):
             print(f"\nSignal {signum} received, shutting down...")
-            asyncio.create_task(app.stop())
+            try:
+                # 実行中のイベントループがあるかチェック
+                loop = asyncio.get_running_loop()
+                loop.create_task(app.stop())
+            except RuntimeError:
+                # イベントループがない場合は新しいループで実行
+                asyncio.run(app.stop())
+
+            # 確実に終了させるため
+            import os
+            import threading
+            import time
+
+            def force_exit():
+                time.sleep(2)  # 2秒待機してから強制終了
+                print("Force exit...")
+                os._exit(0)
+
+            threading.Thread(target=force_exit, daemon=True).start()
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)

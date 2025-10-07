@@ -171,6 +171,27 @@ class RequestLogger:
         with self.db_lock:
             try:
                 with sqlite3.connect(self.db_path) as conn:
+                    # データ型の検証と変換
+                    status_code = request_result.get('status_code')
+                    if status_code is not None:
+                        try:
+                            status_code = int(status_code)
+                        except (ValueError, TypeError):
+                            status_code = None
+
+                    response_time_ms = request_result.get('response_time_ms')
+                    if response_time_ms is not None:
+                        try:
+                            response_time_ms = int(float(response_time_ms))
+                        except (ValueError, TypeError):
+                            response_time_ms = None
+
+                    attempt_count = request_result.get('attempt', 1)
+                    try:
+                        attempt_count = int(attempt_count)
+                    except (ValueError, TypeError):
+                        attempt_count = 1
+
                     # リクエスト履歴の保存
                     conn.execute('''
                         INSERT INTO request_history (
@@ -179,24 +200,26 @@ class RequestLogger:
                             response_headers, response_body, error_message, attempt_count
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
-                        request_result.get('request_id'),
-                        schedule_config.get('name', schedule_config.get('id')),
-                        request_result.get('timestamp'),
-                        schedule_config.get('url'),
-                        schedule_config.get('method'),
+                        str(request_result.get('request_id', '')),
+                        str(schedule_config.get(
+                            'name', schedule_config.get('id', ''))),
+                        str(request_result.get('timestamp', '')),
+                        str(schedule_config.get('url', '')),
+                        str(schedule_config.get('method', '')),
                         json.dumps(schedule_config.get(
                             'headers', {}), ensure_ascii=False),
                         json.dumps(schedule_config.get(
                             'body'), ensure_ascii=False) if schedule_config.get('body') else None,
-                        request_result.get('success', False),
-                        request_result.get('status_code'),
-                        request_result.get('response_time_ms'),
+                        bool(request_result.get('success', False)),
+                        status_code,
+                        response_time_ms,
                         json.dumps(request_result.get(
                             'response_headers', {}), ensure_ascii=False),
                         json.dumps(request_result.get('response_body'), ensure_ascii=False) if request_result.get(
                             'response_body') else None,
-                        request_result.get('error'),
-                        request_result.get('attempt', 1)
+                        str(request_result.get('error', '')
+                            ) if request_result.get('error') else None,
+                        attempt_count
                     ))
 
                     # 統計情報の更新
@@ -229,9 +252,15 @@ class RequestLogger:
 
             # 平均応答時間の計算
             if success and response_time is not None:
-                current_avg = existing_stats[7] or 0
-                new_avg = (
-                    (current_avg * existing_stats[3]) + response_time) / successful_requests
+                try:
+                    response_time_num = float(
+                        response_time) if response_time is not None else 0
+                    current_avg = float(
+                        existing_stats[7]) if existing_stats[7] is not None else 0
+                    new_avg = (
+                        (current_avg * existing_stats[3]) + response_time_num) / successful_requests
+                except (ValueError, TypeError):
+                    new_avg = existing_stats[7] or 0
             else:
                 new_avg = existing_stats[7] or 0
 
@@ -249,6 +278,12 @@ class RequestLogger:
             ))
         else:
             # 新規統計の作成
+            try:
+                avg_response_time = float(
+                    response_time) if success and response_time is not None else 0
+            except (ValueError, TypeError):
+                avg_response_time = 0
+
             conn.execute('''
                 INSERT INTO schedule_stats (
                     schedule_id, schedule_name, total_requests, successful_requests,
@@ -258,7 +293,7 @@ class RequestLogger:
             ''', (
                 schedule_id, schedule_name, 1, 1 if success else 0, 0 if success else 1,
                 timestamp, timestamp if success else None,
-                timestamp if not success else None, response_time if success and response_time else 0
+                timestamp if not success else None, avg_response_time
             ))
 
     def get_request_history(self,
