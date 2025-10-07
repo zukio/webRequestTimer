@@ -200,6 +200,14 @@ class RequestScheduler:
 
         self.logger.info("Request scheduler stopped")
 
+    def stop_sync(self):
+        """スケジューラーを同期的に停止する（スレッドセーフ）"""
+        if not self.is_running:
+            return
+
+        self.is_running = False
+        self.logger.info("Request scheduler stop flag set (sync)")
+
     async def _scheduler_loop(self):
         """スケジューラーのメインループ"""
         self.logger.info("Scheduler loop started")

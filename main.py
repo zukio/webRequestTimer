@@ -178,10 +178,39 @@ class WebRequestTimerApp:
                 return status
 
             elif action == 'start':
-                return asyncio.create_task(self._start_scheduler_async())
+                try:
+                    loop = asyncio.get_running_loop()
+                    return asyncio.create_task(self._start_scheduler_async())
+                except RuntimeError:
+                    # イベントループが実行されていない場合は新しいループで実行
+                    try:
+                        asyncio.run(self._start_scheduler_async())
+                        return True
+                    except Exception as e:
+                        self.logger.error(f"Failed to start scheduler: {e}")
+                        return False
 
             elif action == 'stop':
-                return asyncio.create_task(self._stop_scheduler_async())
+                try:
+                    loop = asyncio.get_running_loop()
+                    return asyncio.create_task(self._stop_scheduler_async())
+                except RuntimeError:
+                    # イベントループが実行されていない場合は、スレッドセーフな停止処理を実行
+                    try:
+                        # スケジューラーに停止フラグを設定（同期的に実行可能）
+                        if self.scheduler:
+                            self.scheduler.stop_sync()
+                            self.logger.info("Scheduler stop flag set successfully")
+                        
+                        # トレイアプリの状態を更新
+                        if self.tray_app:
+                            status = {'scheduler_running': False, 'total_jobs': 0, 'running_jobs': 0}
+                            self.tray_app.update_status(status)
+                        
+                        return True
+                    except Exception as e:
+                        self.logger.error(f"Failed to stop scheduler: {e}")
+                        return False
 
             elif action == 'get_history':
                 if self.request_logger:
@@ -209,7 +238,19 @@ class WebRequestTimerApp:
                 schedules = self.config.get('request_schedules', [])
                 for schedule in schedules:
                     if schedule.get('enabled', True):
-                        return asyncio.create_task(self._request_callback(schedule))
+                        try:
+                            loop = asyncio.get_running_loop()
+                            return asyncio.create_task(self._request_callback(schedule))
+                        except RuntimeError:
+                            # イベントループが実行されていない場合は新しいループで実行
+                            try:
+                                result = asyncio.run(
+                                    self._request_callback(schedule))
+                                return result
+                            except Exception as e:
+                                self.logger.error(
+                                    f"Failed to run test request: {e}")
+                                return None
                 return None
 
             else:
@@ -245,12 +286,16 @@ class WebRequestTimerApp:
     async def _stop_scheduler_async(self):
         """スケジューラーを非同期で停止する"""
         try:
-            await self.scheduler.stop()
-            self.logger.info("Scheduler stopped successfully")
+            if self.scheduler:
+                await self.scheduler.stop()
+                self.logger.info("Scheduler stopped successfully")
+            else:
+                self.logger.warning("Scheduler is not initialized")
 
             # トレイアプリの状態を更新
             if self.tray_app:
-                status = self.scheduler.get_schedule_status()
+                status = self.scheduler.get_schedule_status() if self.scheduler else {
+                    'scheduler_running': False}
                 self.tray_app.update_status(status)
 
         except Exception as e:
