@@ -135,16 +135,23 @@ class WebRequestTimerTrayApp:
 
     def _create_status_menu_items(self) -> list:
         """ステータス表示用のメニュー項目を作成する"""
-        total_jobs = self.scheduler_status.get('total_jobs', 0)
-        running_jobs = self.scheduler_status.get('running_jobs', 0)
+        # スケジューラーからの情報
         scheduler_running = self.scheduler_status.get(
             'scheduler_running', False)
+        running_jobs = self.scheduler_status.get('running_jobs', 0)
+
+        # 設定ファイルからの有効なスケジュール数を取得
+        schedules = self.config.get('request_schedules', [])
+        enabled_schedules = [s for s in schedules if s.get('enabled', True)]
+        total_schedules_in_config = len(schedules)
+        enabled_schedules_count = len(enabled_schedules)
 
         status_text = "稼働中" if scheduler_running else "停止中"
 
         return [
             item(f'スケジューラー: {status_text}', None, enabled=False),
-            item(f'登録スケジュール数: {total_jobs}', None, enabled=False),
+            item(
+                f'設定スケジュール数: {total_schedules_in_config} (有効: {enabled_schedules_count})', None, enabled=False),
             item(f'実行中ジョブ数: {running_jobs}', None, enabled=False)
         ]
 
