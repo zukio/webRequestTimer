@@ -75,12 +75,71 @@ class WebRequestTimerTrayApp:
 
         return image
 
+    def load_icon_image(self, active: bool = False) -> Optional[Image.Image]:
+        """
+        assets/icon.icoからアイコン画像を読み込み、状態に応じて加工する
+
+        Args:
+            active: アクティブ状態（緑色オーバーレイを追加）
+
+        Returns:
+            Optional[Image.Image]: 読み込んだアイコン画像、失敗時はNone
+        """
+        try:
+            # assets/icon.icoのパスを取得
+            icon_path = os.path.join(os.path.dirname(
+                __file__), '..', 'assets', 'icon.ico')
+
+            if os.path.exists(icon_path):
+                # .icoファイルを読み込み
+                base_image = Image.open(icon_path)
+
+                # RGBAモードに変換（透明度を扱うため）
+                if base_image.mode != 'RGBA':
+                    base_image = base_image.convert('RGBA')
+
+                # 必要に応じてサイズを調整（トレイアイコンに適したサイズに）
+                if base_image.size != (32, 32):
+                    base_image = base_image.resize(
+                        (32, 32), Image.Resampling.LANCZOS)
+
+                # アクティブ状態の場合は緑色のオーバーレイを追加
+                if active:
+                    # 緑色のオーバーレイを作成
+                    overlay = Image.new(
+                        'RGBA', base_image.size, (0, 255, 0, 0))
+                    draw = ImageDraw.Draw(overlay)
+
+                    # 右下に小さい緑色の円を描画
+                    circle_size = 8
+                    x = base_image.size[0] - circle_size - 2
+                    y = base_image.size[1] - circle_size - 2
+                    draw.ellipse([x, y, x + circle_size, y + circle_size],
+                                 fill=(34, 139, 34, 200))  # 半透明の緑色
+
+                    # オーバーレイを合成
+                    base_image = Image.alpha_composite(base_image, overlay)
+
+                self.logger.info(
+                    f"Icon loaded from {icon_path} (active: {active})")
+                return base_image
+            else:
+                self.logger.warning(f"Icon file not found: {icon_path}")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"Failed to load icon from assets/icon.ico: {e}")
+            return None
+
     def setup_tray(self):
         """トレイアイコンとメニューを設定する"""
         try:
-            # アイコン画像の作成
+            # アイコン画像の読み込み（まずはassets/icon.icoを試す）
             active = self.scheduler_status.get('scheduler_running', False)
-            image = self.create_icon_image(active)
+            image = self.load_icon_image(active)
+            if image is None:
+                # assets/icon.icoが利用できない場合は動的生成
+                image = self.create_icon_image(active)
 
             # ステータス情報のメニュー項目を作成
             status_items = self._create_status_menu_items()
@@ -197,8 +256,61 @@ class WebRequestTimerTrayApp:
         if self.icon:
             # アイコンの更新
             active = scheduler_status.get('scheduler_running', False)
-            new_image = self.create_icon_image(active)
+            # まずassets/icon.icoを試す
+            new_image = self.load_icon_image(active)
+            if new_image is None:
+                # フォールバック用の動的生成
+                new_image = self.create_icon_image(active)
             self.icon.icon = new_image
+
+            # メニューの更新
+            self.refresh_menu()
+
+    def refresh_menu(self):
+        """メニューを再構築して更新する"""
+        try:
+            if not self.icon:
+                return
+
+            # ステータス情報のメニュー項目を作成
+            status_items = self._create_status_menu_items()
+
+            # スケジュール管理メニュー項目を作成
+            schedule_items = self._create_schedule_menu_items()
+
+            # メインメニューの構築
+            new_menu = pystray.Menu(
+                # ステータス情報
+                item('WebRequestTimer', None, enabled=False),
+                pystray.Menu.SEPARATOR,
+                *status_items,
+                pystray.Menu.SEPARATOR,
+
+                # スケジュール管理
+                item('スケジュール管理', pystray.Menu(*schedule_items)),
+
+                # 設定
+                item('設定', pystray.Menu(
+                    item('設定ファイルを編集', self.edit_config_file),
+                    item('UDP通知設定', self.configure_udp_notification)
+                )),
+
+                pystray.Menu.SEPARATOR,
+                item('情報・ヘルプ', pystray.Menu(
+                    item('バージョン情報', self.show_about),
+                    item('使用方法', self.show_help)
+                )),
+
+                pystray.Menu.SEPARATOR,
+                item('終了', self.on_exit)
+            )
+
+            # メニューを更新
+            self.icon.menu = new_menu
+            self.logger.debug("Tray menu refreshed")
+
+        except Exception as e:
+            self.logger.error(f"Failed to refresh menu: {e}")
 
     # メニューアクションのハンドラー
     def add_new_schedule(self, icon, item):
@@ -322,6 +434,9 @@ class WebRequestTimerTrayApp:
                 if self.scheduler_callback:
                     self.scheduler_callback('add_schedule', new_schedule)
 
+                # メニューを更新
+                self.refresh_menu()
+
                 result['saved'] = True
                 messagebox.showinfo("成功", f"スケジュール '{name}' を追加しました")
                 root.destroy()
@@ -391,6 +506,9 @@ class WebRequestTimerTrayApp:
                 listbox.delete(idx)
                 listbox.insert(idx, schedule_info)
 
+                # メニューを更新
+                self.refresh_menu()
+
                 messagebox.showinfo(
                     "更新完了", f"スケジュール '{schedule.get('name')}' を{status}にしました")
 
@@ -403,6 +521,10 @@ class WebRequestTimerTrayApp:
                     del schedules[idx]
                     self.save_config()
                     listbox.delete(idx)
+
+                    # メニューを更新
+                    self.refresh_menu()
+
                     messagebox.showinfo("削除完了", "スケジュールを削除しました")
 
         tk.Button(button_frame, text="有効/無効切り替え",
@@ -473,6 +595,10 @@ class WebRequestTimerTrayApp:
                 if schedule.get('id') == schedule_id:
                     schedule['enabled'] = not schedule.get('enabled', True)
                     self.save_config()
+
+                    # メニューを更新
+                    self.refresh_menu()
+
                     status = "有効" if schedule['enabled'] else "無効"
                     self._show_info(
                         "更新完了", f"スケジュール '{schedule.get('name')}' を{status}にしました")
@@ -720,6 +846,10 @@ class WebRequestTimerTrayApp:
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
                 self.config.clear()
                 self.config.update(json.load(f))
+
+            # メニューを更新
+            self.refresh_menu()
+
             self._show_info("設定リロード", "設定ファイルをリロードしました")
         except Exception as e:
             self._show_error("エラー", f"設定リロードに失敗しました: {e}")
